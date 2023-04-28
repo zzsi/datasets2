@@ -1,18 +1,71 @@
-from datasets import list_datasets, load_dataset, load_from_disk
+import tqdm
+import itertools
+import os
+from datasets.arrow_dataset import Dataset
+from datasets.splits import SplitDict, SplitInfo
 from datasets.features.features import require_decoding
 from datasets.utils.py_utils import convert_file_size_to_int
 from datasets import config as datasets_config
 from datasets.table import embed_table_storage
-import tqdm
-import itertools
-from io import BytesIO
+
+# TODO (future): consider saving a dataset script to the folder.
+#    Example: https://github.com/huggingface/datasets/blob/main/templates/new_dataset_script.py
 
 
-import os
+def save_to_disk(
+    dataset: Dataset,
+    outdir: str,
+    parquet: bool = False,
+    num_shards=2,
+    embed_external_files: bool = True,
+    dataset_name: str = None,
+    **kwargs,
+):
+    """
+    Extends datasets.Dataset.save_to_disk to support saving to parquet files.
+
+    dataset: A dataset that is already splitted such that you can call ds["train"], ds["test"] etc.
+    """
+    if not parquet:
+        return dataset.save_to_disk(outdir, **kwargs)
+    infos = []
+    for split in dataset.keys():
+        subset = dataset[split]
+        info = save_as_parquet(
+            subset,
+            split=split,
+            outdir=outdir,
+            num_shards=num_shards,
+        )
+        infos.append(info)
+
+    # Merge the infos.
+    merged_info = infos[0]
+    dataset_sizes = [i.dataset_size for i in infos]
+    sizes_in_bytes = [i.size_in_bytes for i in infos]
+    split_infos = [i.splits for i in infos]
+    data_files = []
+    for i in infos:
+        data_files.extend(i.data_files)
+    merged_info.dataset_size = sum(dataset_sizes)
+    merged_info.size_in_bytes = sum(sizes_in_bytes)
+    splits = {}
+    for split_info in split_infos:
+        for k, v in split_info.items():
+            splits[k] = v
+    merged_info.splits = splits
+    # merged_info.data_files = data_files  # This is not saved anyway.
+    merged_info.builder_name = "parquet"
+    merged_info.write_to_directory(outdir)
 
 
 def save_as_parquet(
-    ds, outdir: str, split: str = "train", num_shards=2, embed_external_files=True
+    ds: Dataset,  # should not contain subsplits
+    outdir: str,
+    split: str = "train",
+    num_shards=2,
+    embed_external_files: bool = True,
+    dataset_name: str = None,
 ):
     os.makedirs(outdir, exist_ok=True)
     # Find decodable columns, because if there are any, we need to:
@@ -45,7 +98,7 @@ def save_as_parquet(
 
         def shards_with_embedded_external_files(shards):
             for shard in shards:
-                format = shard.format
+                shard_format = shard.format
                 shard = shard.with_format("arrow")
                 shard = shard.map(
                     embed_table_storage,
@@ -53,7 +106,7 @@ def save_as_parquet(
                     batch_size=1000,
                     keep_in_memory=True,
                 )
-                shard = shard.with_format(**format)
+                shard = shard.with_format(**shard_format)
                 yield shard
 
         shards = shards_with_embedded_external_files(shards)
@@ -64,7 +117,6 @@ def save_as_parquet(
     shards_iter = iter(shards)
     first_shard = next(shards_iter)
 
-    uploaded_size = 0
     shards_path_in_repo = []
     for index, shard in tqdm.tqdm(
         enumerate(itertools.chain([first_shard], shards_iter)),
@@ -79,4 +131,20 @@ def save_as_parquet(
         shard.to_parquet(shard_path_in_repo)
         shards_path_in_repo.append(str(shard_path_in_repo))
 
-    return shards_path_in_repo
+    # Populate dataset info.
+    info_to_dump = ds.info.copy()
+    info_to_dump.dataset_size = dataset_nbytes
+    info_to_dump.size_in_bytes = dataset_nbytes
+    info_to_dump.data_files = shards_path_in_repo
+    info_to_dump.splits = SplitDict(
+        {
+            split: SplitInfo(
+                split,
+                num_bytes=dataset_nbytes,
+                num_examples=len(ds),
+                dataset_name=dataset_name,
+            )
+        }
+    )
+
+    return info_to_dump
