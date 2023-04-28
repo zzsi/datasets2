@@ -25,6 +25,14 @@ def save_to_disk(
     Extends datasets.Dataset.save_to_disk to support saving to parquet files.
 
     dataset: A dataset that is already splitted such that you can call ds["train"], ds["test"] etc.
+    outdir: The directory to save the dataset to.
+    parquet: If True, save the dataset as parquet files.
+    num_shards: The number of shards to save the dataset to.
+    embed_external_files: If True, embed external files into the dataset.
+    dataset_name: The name of the dataset. If None, use the name of the dataset.
+
+    Reference:
+        https://github.com/huggingface/datasets/src/datasets/arrow_dataset.py
     """
     if not parquet:
         return dataset.save_to_disk(outdir, **kwargs)
