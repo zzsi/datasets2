@@ -9,11 +9,11 @@ with open("README.md") as f:
 
 setup(
     name="datasets2",
-    version="0.1",
+    version="0.1.1",
     description="Add-ons to the huggingface `datasets`",
-    url="",
-    author="",
-    author_email="",
+    url="https://github.com/zzsi/datasets2",
+    author="ZZ Si",
+    author_email="zhangzhang.si@gmail.com",
     license="MIT",
     packages=find_packages(),
     long_description=long_description,
