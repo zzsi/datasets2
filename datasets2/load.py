@@ -29,6 +29,10 @@ def find_parquet_files_for_split(directory, split):
 def load_dataset(path, *args, **kwargs):
     """
     Extends datasets.load_dataset to support loading from parquet files.
+
+    # TODO: it currently downloads the parquet files to the tmp folder.
+    e.g. Downloading and preparing dataset parquet/default to /root/.cache/huggingface/datasets/parquet
+    This is not necessary.
     """
     if there_exist_parquet_files_in_this_directory(path):
         if dataset_info_says_buider_is_parquet(path):

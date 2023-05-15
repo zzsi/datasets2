@@ -50,13 +50,17 @@ def save_to_disk(
     # Merge the infos.
     merged_info = infos[0]
     dataset_sizes = [i.dataset_size for i in infos]
+    dataset_sizes = [x for x in dataset_sizes if x is not None]
     sizes_in_bytes = [i.size_in_bytes for i in infos]
+    sizes_in_bytes = [x for x in sizes_in_bytes if x is not None]
     split_infos = [i.splits for i in infos]
     data_files = []
     for i in infos:
         data_files.extend(i.data_files)
-    merged_info.dataset_size = sum(dataset_sizes)
-    merged_info.size_in_bytes = sum(sizes_in_bytes)
+    if len(dataset_sizes) > 0:
+        merged_info.dataset_size = sum(dataset_sizes)
+    if len(sizes_in_bytes) > 0:
+        merged_info.size_in_bytes = sum(sizes_in_bytes)
     splits = {}
     for split_info in split_infos:
         for k, v in split_info.items():
@@ -88,14 +92,19 @@ def save_as_parquet(
         else []
     )
 
-    dataset_nbytes = ds._estimate_nbytes()
+    if hasattr(ds, "_estimate_nbytes"):
+        dataset_nbytes = ds._estimate_nbytes()
 
-    if num_shards is None:
-        max_shard_size = convert_file_size_to_int(
-            max_shard_size or datasets_config.MAX_SHARD_SIZE
-        )
-        num_shards = int(dataset_nbytes / max_shard_size) + 1
-        num_shards = max(num_shards, 1)
+        if num_shards is None:
+            max_shard_size = convert_file_size_to_int(
+                max_shard_size or datasets_config.MAX_SHARD_SIZE
+            )
+            num_shards = int(dataset_nbytes / max_shard_size) + 1
+            num_shards = max(num_shards, 1)
+    else:
+        dataset_nbytes = None
+        if num_shards is None:
+            num_shards = 1
 
     shards = (
         ds.shard(num_shards=num_shards, index=i, contiguous=True)
@@ -133,9 +142,9 @@ def save_as_parquet(
         # disable=not logging.is_progress_bar_enabled(),
     ):
         shard_path_in_repo = path_in_repo(index, shard)
-        print("")
-        print(shard_path_in_repo)
-        print(type(shard))
+        # print("")
+        # print(shard_path_in_repo)
+        # print(type(shard))
         shard.to_parquet(shard_path_in_repo)
         shards_path_in_repo.append(str(shard_path_in_repo))
 
